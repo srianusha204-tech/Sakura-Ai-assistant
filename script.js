@@ -246,12 +246,12 @@ if (!document.getElementById('ai-pomodoro-widget')) {
 
       <div class="notification-box" id="calendarInviteBox">
         <label style="margin-top:0; color:#ff758f;">Calendar Invitees</label>
-        <details class="guest-dropdown" id="inviteeDropdown">
-          <summary id="inviteeDropdownSummary">Choose guests or None</summary>
-          <div class="guest-options" id="inviteeOptions"></div>
-        </details>
+        <input type="email" id="inviteeEmailInput" placeholder="Guest email address (add more with commas)" autocomplete="email" />
+        <label class="guest-option" style="margin-top:8px; text-transform:none; letter-spacing:0; color:#f1f1f6;">
+          <input type="checkbox" id="noGuestsOption"> None — create a Calendar task without guests or a Meet link
+        </label>
         <div style="font-size: 10.5px; color: #a0a0b0; margin-top: 6px; line-height: 1.4;">
-          Select one or more saved guests for a Google Meet, or choose None for a Calendar task without a Meet link.
+          Type one or more guest email addresses, separated by commas. Choose None for a Calendar task without a Meet link.
         </div>
         <button class="shiny-btn" id="aiMeetingBtn" style="background: linear-gradient(135deg, #4b2a73, #24113d);">Schedule Meeting & Generate Room</button>
         <div id="calendarSyncStatus" style="font-size: 10.5px; color: #a0a0b0; margin-top: 6px;">Calendar is not connected.</div>
@@ -333,15 +333,9 @@ if (!document.getElementById('ai-pomodoro-widget')) {
   const meetingReminderMinutesInput = document.getElementById('meetingReminderMinutesInput');
   const taskReminderMinutesInput = document.getElementById('taskReminderMinutesInput');
   const reminderStatusMsg = document.getElementById('reminderStatusMsg');
-  const inviteeDropdown = document.getElementById('inviteeDropdown');
-  const inviteeOptions = document.getElementById('inviteeOptions');
-  const inviteeDropdownSummary = document.getElementById('inviteeDropdownSummary');
+  const inviteeEmailInput = document.getElementById('inviteeEmailInput');
+  const noGuestsOption = document.getElementById('noGuestsOption');
   const calendarSyncStatus = document.getElementById('calendarSyncStatus');
-  const savedInvitees = JSON.parse(localStorage.getItem('sakuraInvitees') || '[]');
-  ['kondapi@gmail.com', 'meena.rasiv2007@gmail.com', 'srianusha204@agents.trycaspianai.com'].forEach(email => {
-    if (!savedInvitees.includes(email)) savedInvitees.push(email);
-  });
-  localStorage.setItem('sakuraInvitees', JSON.stringify(savedInvitees));
   let pendingCalendarAction = 'book';
 
   reminderEmailInput.value = reminderSettings.email;
@@ -398,30 +392,21 @@ if (!document.getElementById('ai-pomodoro-widget')) {
   });
   if (reminderSettings.email) reminderStatusMsg.innerText = `Reminders enabled for ${reminderSettings.email}.`;
 
-  function renderInvitees() {
-    inviteeOptions.innerHTML = `<label class="guest-option"><input type="checkbox" value="none">None - create a task without Google Meet</label>` +
-      savedInvitees.map(email => `<label class="guest-option"><input type="checkbox" value="${email}">${email}</label>`).join('');
-  }
-
   function getSelectedInvitees() {
-    return Array.from(inviteeOptions.querySelectorAll('input[type="checkbox"]:checked'))
-      .map(option => option.value)
-      .filter(email => email !== 'none');
+    if (noGuestsOption.checked) return [];
+    return [...new Set(inviteeEmailInput.value
+      .split(',')
+      .map(email => email.trim().toLowerCase())
+      .filter(email => email.length > 0))];
   }
 
-  inviteeOptions.addEventListener('change', event => {
-    const changedOption = event.target;
-    const checkboxes = Array.from(inviteeOptions.querySelectorAll('input[type="checkbox"]'));
-    const noneOption = inviteeOptions.querySelector('input[value="none"]');
-    if (changedOption.value === 'none' && changedOption.checked) {
-      checkboxes.forEach(option => { if (option !== noneOption) option.checked = false; });
-    } else if (changedOption.value !== 'none' && changedOption.checked) {
-      noneOption.checked = false;
-    }
-    const selected = checkboxes.filter(option => option.checked && option.value !== 'none').map(option => option.value);
-    inviteeDropdownSummary.innerText = selected.length ? `${selected.length} guest${selected.length === 1 ? '' : 's'} selected` : 'None - create a task without Google Meet';
+  noGuestsOption.addEventListener('change', () => {
+    inviteeEmailInput.disabled = noGuestsOption.checked;
+    if (noGuestsOption.checked) inviteeEmailInput.value = '';
   });
-  renderInvitees();
+  inviteeEmailInput.addEventListener('input', () => {
+    if (inviteeEmailInput.value.trim()) noGuestsOption.checked = false;
+  });
 
   // --- GOOGLE OAUTH & CALENDAR API CONFIGURATION ---
   const GOOGLE_CLIENT_ID = '591106372392-elt5e39788sp2l0q6raq92gnpbmf7obj.apps.googleusercontent.com';
@@ -511,6 +496,11 @@ if (!document.getElementById('ai-pomodoro-widget')) {
     const taskDetails = document.getElementById('multiTasksInput').value.trim() || 'None provided';
     const taskDeadline = date || 'None provided';
     const selectedInvitees = getSelectedInvitees();
+    const invalidInvitee = selectedInvitees.find(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    if (invalidInvitee) {
+      showCornerToast('Invalid Guest Email', `Please check this guest email: ${invalidInvitee}`);
+      return;
+    }
     const isTask = selectedInvitees.length === 0;
     const reminderMinutes = isTask ? reminderSettings.taskMinutes : reminderSettings.meetingMinutes;
     const description = `Scheduled by Sakura AI. Agenda/topic: ${title}. Tasks: ${taskDetails}. Task deadline: ${taskDeadline}.`;
