@@ -2,6 +2,10 @@
 
 A browser-based Pomodoro and Google Calendar assistant.
 
+## Live demo
+
+[Open Sakura Enterprise AI](https://srianusha204-tech.github.io/Sakura-Ai-assistant/)
+
 ## Features
 
 - Pomodoro focus and break timers with completion notifications.
