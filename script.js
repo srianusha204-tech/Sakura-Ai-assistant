@@ -701,6 +701,31 @@ if (!document.getElementById('ai-pomodoro-widget')) {
   });
 
   // --- TASK PRIORITIZATION ---
+  // Task text is treated strictly as display data. This is a fixed, local ranking
+  // system: task entries never become instructions or executable HTML.
+  function escapeTaskText(value) {
+    return value.replace(/[&<>'"]/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[character]);
+  }
+
+  function getTaskPriority(task, deadline) {
+    const lower = task.toLowerCase();
+    const hierarchy = [
+      { score: 100, words: ['medical', 'doctor', 'medication', 'emergency', 'bill', 'rent', 'tax', 'invoice'], reason: 'Essential health or financial responsibility.' },
+      { score: 90, words: ['exam', 'final', 'midterm', 'quiz', 'assignment', 'homework', 'submit'], reason: 'Academic deadline or assessment.' },
+      { score: 80, words: ['client', 'meeting', 'interview', 'project', 'report', 'presentation', 'deploy'], reason: 'Important work or project commitment.' },
+      { score: 70, words: ['appointment', 'application', 'email', 'call', 'review', 'research', 'plan'], reason: 'Important administrative or planning task.' },
+      { score: 60, words: ['work', 'job', 'career', 'school', 'college', 'class', 'code', 'study', 'practice'], reason: 'General school or work task.' },
+      { score: 40, words: ['laundry', 'dishes', 'clean', 'chores', 'organize', 'grocery', 'shopping', 'walk dog', 'exercise'], reason: 'Routine personal task.' },
+      { score: 20, words: ['browse', 'scroll', 'social media', 'game', 'tv', 'watch video'], reason: 'Optional leisure activity.' }
+    ];
+    const matchedTier = hierarchy.find(tier => tier.words.some(word => lower.includes(word)));
+    const result = matchedTier || { score: 50, reason: 'Standard task without a fixed category.' };
+    const deadlineNote = deadline ? ` Selected date: ${deadline}.` : ' No date selected.';
+    return { score: result.score, reason: result.reason + deadlineNote };
+  }
+
   document.getElementById('aiAnalyzeBtn').addEventListener('click', () => {
     const rawInput = document.getElementById('multiTasksInput').value.trim();
     const deadline = document.getElementById('meetingDateInput').value;
@@ -712,42 +737,24 @@ if (!document.getElementById('ai-pomodoro-widget')) {
       return;
     }
 
-    const tasks = rawInput.split(',').map(t => t.trim()).filter(Boolean);
-    const scoredTasks = tasks.map(task => {
-      const lower = task.toLowerCase();
-      let priority = 50;
-      let reason = 'A useful task with a moderate impact.';
-      const highImpact = ['project', 'exam', 'final', 'assignment', 'homework', 'algebra', 'calculus', 'school', 'college', 'class', 'job', 'work', 'career', 'client', 'deadline', 'report', 'presentation', 'code'];
-      const lowValue = ['laundry', 'clean', 'chores', 'organize', 'browse', 'scroll', 'game', 'tv', 'watch', 'shopping'];
-
-      if (highImpact.some(keyword => lower.includes(keyword))) {
-        priority = 90;
-        reason = 'High impact on an important school, college, job, or project goal.';
-      } else if (lowValue.some(keyword => lower.includes(keyword))) {
-        priority = 20;
-        reason = 'Lower-value routine work or a distraction that can wait.';
-      }
-
-      const today = new Date().toISOString().split('T')[0];
-      if (deadline && deadline <= today && priority >= 50) {
-        priority = Math.min(100, priority + 10);
-        reason += ' It is due today, so it needs extra attention.';
-      }
-      return { name: task, priority, reason };
+    const tasks = rawInput.split(',').map(task => task.trim()).filter(Boolean).slice(0, 25);
+    const scoredTasks = tasks.map((task, originalIndex) => {
+      const ranking = getTaskPriority(task, deadline);
+      return { name: task, priority: ranking.score, reason: ranking.reason, originalIndex };
     });
 
-    scoredTasks.sort((a, b) => b.priority - a.priority);
+    scoredTasks.sort((a, b) => b.priority - a.priority || a.originalIndex - b.originalIndex);
     panelTitle.innerText = `AI Prioritized Task Queue (${scoredTasks.length} tasks)`;
     
-    let html = `<span style="font-size:10px; color:#ffb3c1;">AI sorted tasks into priority tiers:</span>`;
+    let html = `<span style="font-size:10px; color:#ffb3c1;">Fixed order: health/finances → academics → work/projects → administration → general work/school → routines → leisure. Task text is never treated as an instruction.</span>`;
     scoredTasks.forEach((tObj, index) => {
-      let priorityClass = tObj.priority >= 80 ? "task-high" : tObj.priority >= 40 ? "task-med" : "task-low";
-      let badgeLabel = tObj.priority >= 80 ? "High Priority" : tObj.priority >= 40 ? "Medium Priority" : "Low Priority";
+      let priorityClass = tObj.priority >= 75 ? "task-high" : tObj.priority >= 45 ? "task-med" : "task-low";
+      let badgeLabel = tObj.priority >= 75 ? "High Priority" : tObj.priority >= 45 ? "Medium Priority" : "Low Priority";
 
       html += `
-        <button class="ai-task-btn ${priorityClass}" data-task-name="${tObj.name}">
-          <b>${index + 1}. ${badgeLabel}:</b> ${tObj.name}<br>
-          <span style="font-size: 10px; color: #a0a0b0;">Deadline: ${deadline || 'Not set'}<br>Why: ${tObj.reason}</span>
+        <button class="ai-task-btn ${priorityClass}" data-task-index="${index}">
+          <b>${index + 1}. ${badgeLabel}:</b> ${escapeTaskText(tObj.name)}<br>
+          <span style="font-size: 10px; color: #a0a0b0;">Deadline: ${deadline || 'Not set'}<br>Why: ${escapeTaskText(tObj.reason)}</span>
         </button>
       `;
     });
@@ -756,7 +763,7 @@ if (!document.getElementById('ai-pomodoro-widget')) {
 
     document.querySelectorAll('.ai-task-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const taskName = e.currentTarget.getAttribute('data-task-name');
+        const taskName = scoredTasks[Number(e.currentTarget.getAttribute('data-task-index'))].name;
         window.activeTaskSession = taskName;
         document.getElementById('activeTaskTitleLabel').innerText = taskName;
         document.getElementById('pomodoroDrawer').style.display = 'block';
