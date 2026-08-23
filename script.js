@@ -629,9 +629,20 @@ if (!document.getElementById('ai-pomodoro-widget')) {
   document.getElementById('tzConvertFrom').addEventListener('change', convertTimeZone);
   convertTimeZone();
 
+  let pomodoroAudioContext;
+  function preparePomodoroAudio() {
+    try {
+      pomodoroAudioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+      if (pomodoroAudioContext.state === 'suspended') pomodoroAudioContext.resume();
+    } catch (e) {
+      console.log("Audio Context requires user gesture.");
+    }
+  }
+
   function playAmbientChime() {
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      preparePomodoroAudio();
+      const audioCtx = pomodoroAudioContext;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'sine';
@@ -648,8 +659,8 @@ if (!document.getElementById('ai-pomodoro-widget')) {
     }
   }
 
-  function showCornerToast(title, message) {
-    playAmbientChime();
+  function showCornerToast(title, message, playSound = true) {
+    if (playSound) playAmbientChime();
     const container = document.getElementById('cornerToastContainer');
     const toast = document.createElement('div');
     toast.className = 'corner-toast';
@@ -779,25 +790,27 @@ if (!document.getElementById('ai-pomodoro-widget')) {
   const breakInput = document.getElementById('breakTimeInput');
 
   function finishTimerPhase() {
+    // The countdown has reached 00:00. Play the same ping used by the app's alerts.
+    playAmbientChime();
     if (timerPhase === 'focus') {
       const breakMinutes = Math.max(0, parseInt(breakInput.value, 10) || 0);
       if (breakMinutes === 0) {
         clearInterval(timerInterval);
         window.userMetrics.completedTasks++;
-        showCornerToast("Pomodoro Complete!", "Focus session complete. No break was set.");
+        showCornerToast("Pomodoro Complete!", "Focus session complete. No break was set.", false);
         updateRealTimePerformance("Focus session finished", "Strong stamina", "Start another focus session when ready.");
         return;
       }
       timerPhase = 'break';
       timeLeft = breakMinutes * 60;
-      showCornerToast("Focus Complete", "Break timer started.");
+      showCornerToast("Focus Complete", "Break timer started.", false);
       updateRealTimePerformance("Break in progress", "Strong stamina", "Return when the break ends.");
       return;
     }
 
     clearInterval(timerInterval);
     window.userMetrics.completedTasks++;
-    showCornerToast("Break Complete", "Pomodoro cycle complete. Ready for the next task.");
+    showCornerToast("Break Complete", "Pomodoro cycle complete. Ready for the next task.", false);
     updateRealTimePerformance("Pomodoro cycle finished", "Consistent focus", "Start another focus session when ready.");
   }
 
@@ -810,6 +823,8 @@ if (!document.getElementById('ai-pomodoro-widget')) {
   });
 
   document.getElementById('startTimerBtn').addEventListener('click', () => {
+    // Initialize audio during the button click so the completion ping is allowed by browsers.
+    preparePomodoroAudio();
     clearInterval(timerInterval);
     isPaused = false;
     timerPhase = 'focus';
